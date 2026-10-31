@@ -16,6 +16,7 @@ from brasileirao.simulate import position_matrix, scoreline_distribution, simula
 
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
 SCORELINE_FROM = 2015
+OUTCOME_MODEL_FROM = 2015
 
 
 def run(n_sims: int = 20_000, refresh: bool = False, output_dir: Path = OUTPUT_DIR, seed: int = 42):
@@ -25,6 +26,7 @@ def run(n_sims: int = 20_000, refresh: bool = False, output_dir: Path = OUTPUT_D
     fixtures = remaining_fixtures(matches, season)
 
     model = EloModel().fit(matches)
+    model.fit_outcome_model(matches, (matches.season >= OUTCOME_MODEL_FROM) & (matches.season < season))
     probs = np.array([model.probabilities(h, a) for h, a in fixtures.itertuples(index=False)])
     scorelines = scoreline_distribution(matches[matches.season >= SCORELINE_FROM])
 

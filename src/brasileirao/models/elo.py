@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from brasileirao.models.ordered_logit import OrderedLogit
+
 BASE_RATING = 1500.0
 
 
@@ -29,18 +31,30 @@ def goal_diff_multiplier(goal_diff: int) -> float:
 
 @dataclass
 class EloModel:
-    # Defaults chosen by grid search on log-loss (2015–2025); the optimum is flat around these values
-    k: float = 12.0
-    home_advantage: float = 80.0
+    # Defaults chosen by grid search on log-loss over the tuning seasons 2015–2018 (see backtest.py)
+    k: float = 8.0
+    home_advantage: float = 100.0
     season_regression: float = 0.33
     ratings: dict[str, float] = field(default_factory=dict, repr=False)
     draw_rate: float = field(default=0.27, repr=False)
     history: pd.DataFrame | None = field(default=None, repr=False)
+    # Optional learned mapping rating_diff -> (H, D, A); falls back to the fixed draw-rate split
+    outcome_model: OrderedLogit | None = field(default=None, repr=False)
+
+    def rating_diff(self, home: str, away: str) -> float:
+        return self.ratings.get(home, BASE_RATING) + self.home_advantage - self.ratings.get(away, BASE_RATING)
 
     def probabilities(self, home: str, away: str) -> tuple[float, float, float]:
         """(P(home win), P(draw), P(away win)) using the current ratings."""
-        diff = self.ratings.get(home, BASE_RATING) + self.home_advantage - self.ratings.get(away, BASE_RATING)
+        diff = self.rating_diff(home, away)
+        if self.outcome_model is not None:
+            return tuple(self.outcome_model.predict(diff)[0])
         return self._split(expected_score(diff))
+
+    def fit_outcome_model(self, matches: pd.DataFrame, mask: pd.Series) -> "EloModel":
+        """Fit the ordered logit on pre-match rating differences of the matches selected by `mask`."""
+        self.outcome_model = OrderedLogit().fit(self.history.rating_diff[mask], matches.result[mask])
+        return self
 
     def _split(self, e: float) -> tuple[float, float, float]:
         # Keep E = P(win) + 0.5 * P(draw); shrink the draw share for extreme mismatches so no prob < 0
@@ -62,6 +76,7 @@ class EloModel:
     def fit(self, matches: pd.DataFrame) -> "EloModel":
         """Run through matches chronologically, storing the pre-match probabilities of each match."""
         self.ratings = {}
+        self.outcome_model = None
         self.draw_rate = float((matches.home_goals == matches.away_goals).mean())
         records = []
         previous_teams: list[str] = []
@@ -72,15 +87,17 @@ class EloModel:
             else:
                 self.ratings.update({t: BASE_RATING for t in teams})
             for row in games.itertuples(index=False):
-                p_home, p_draw, p_away = self.probabilities(row.home, row.away)
-                records.append((p_home, p_draw, p_away))
-                e = p_home + 0.5 * p_draw
+                diff = self.rating_diff(row.home, row.away)
+                e = expected_score(diff)
+                records.append((diff, *self._split(e)))
                 s = 1.0 if row.home_goals > row.away_goals else 0.5 if row.home_goals == row.away_goals else 0.0
                 delta = self.k * goal_diff_multiplier(row.home_goals - row.away_goals) * (s - e)
                 self.ratings[row.home] += delta
                 self.ratings[row.away] -= delta
             previous_teams = teams
-        self.history = pd.DataFrame(records, columns=["p_home", "p_draw", "p_away"], index=matches.index)
+        self.history = pd.DataFrame(
+            records, columns=["rating_diff", "p_home", "p_draw", "p_away"], index=matches.index
+        )
         return self
 
     def rating_table(self, teams: list[str] | None = None) -> pd.Series:
