@@ -1,0 +1,11 @@
+data/
+outputs/
+CLAUDE.md
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+.pytest_cache/
+.vscode/
+.env

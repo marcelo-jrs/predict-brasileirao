@@ -1,0 +1,19 @@
+name: brasileirao
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pandas
+  - numpy
+  - scipy
+  - scikit-learn
+  - statsmodels
+  - matplotlib
+  - seaborn
+  - plotly
+  - jupyterlab
+  - requests
+  - pytest
+  - pip
+  - pip:
+      - -e .
