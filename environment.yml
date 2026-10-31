@@ -3,6 +3,9 @@ channels:
   - conda-forge
 dependencies:
   - python=3.12
+  # OpenBLAS instead of MKL: MKL loads its OpenMP DLL at runtime and crashes (0xC06D007F) when the env
+  # is not activated, e.g. in VS Code Jupyter kernels
+  - libblas=*=*openblas
   - pandas
   - numpy
   - scipy
