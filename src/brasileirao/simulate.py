@@ -26,7 +26,8 @@ def simulate_season(
     n_sims: int = 20_000,
     seed: int | None = 42,
     score_probs: np.ndarray | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
+    return_outcomes: bool = False,
+) -> tuple[np.ndarray, ...]:
     """Simulate the remaining fixtures `n_sims` times.
 
     Two ways to describe each fixture:
@@ -39,10 +40,13 @@ def simulate_season(
         probs: array (n_fixtures, 3) with P(home), P(draw), P(away) for each fixture.
         scorelines: output of `scoreline_distribution`.
         score_probs: array (n_fixtures, G, G) with P(home scores i, away scores j).
+        return_outcomes: also return the simulated result of every fixture.
 
     Returns:
         positions: int array (n_sims, n_teams) with the final position (1 = champion) of each team.
         points: int array (n_sims, n_teams) with the final points of each team.
+        outcomes (only with `return_outcomes`): int array (n_sims, n_fixtures),
+            0 = home win, 1 = draw, 2 = away win.
         Teams are in alphabetical order (see `teams_of`).
     """
     rng = np.random.default_rng(seed)
@@ -82,6 +86,8 @@ def simulate_season(
     order = np.argsort(-key, axis=1)
     positions = np.empty_like(order)
     np.put_along_axis(positions, order, np.arange(1, n_teams + 1)[None, :], axis=1)
+    if return_outcomes:
+        return positions, points.astype(np.int64), outcome
     return positions, points.astype(np.int64)
 
 

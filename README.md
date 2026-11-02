@@ -57,6 +57,29 @@ The results are also saved in `outputs/`:
 - `predictions_2026_elo.csv` – the table above (one file per model)
 - `positions_2026_elo.csv` – the chance of each team finishing in each position (1 to 20)
 
+### Next games of the relegation fight
+
+```bash
+python -m brasileirao.next_games
+```
+
+For every team with a relegation risk of 5% or more, it shows the team's **next game** (from ESPN's schedule),
+the chance of a home win / draw / away win, and the team's relegation risk **today** and **if it wins, draws
+or loses** that game. Example:
+
+```
+Wed 04/11 19:30   Flamengo RJ (73 pts, 1st)  x  Gremio (37 pts, 15th)
+  Chance:  Flamengo RJ win 78%  |  draw 15%  |  Gremio win 8%
+  Relegation risk   today   if win  if draw  if lose
+  Gremio              45%      15%      40%      49%
+```
+
+How "if win" is computed: out of the 20,000 simulated seasons, keep only those in which Grêmio won this game,
+and count how often Grêmio was relegated in them.
+
+Options: `--model`, `--sims`, `--refresh` (same as above), `--min-risk 10` (only teams with risk ≥ 10%),
+`--days 21` (how far ahead to look for games; default 14).
+
 ## 3. Check how good the model is (optional)
 
 ```bash
@@ -96,6 +119,7 @@ src/brasileirao/
   models/poisson.py         Poisson / Dixon-Coles goals model (attack + defence per team)
   simulate.py      plays the remaining games many times
   predict.py       command that puts it all together
+  next_games.py    next games of the relegation fight and the impact of each result
   backtest.py      tests the model on past seasons
 notebooks/         explanations and exploration
 tests/             automated tests

@@ -126,6 +126,38 @@ def fetch_espn_results(start: date, end: date) -> pd.DataFrame:
     return df.drop_duplicates(["home", "away"])
 
 
+# Games with these statuses have no reliable date (or will not be played)
+ESPN_SKIP_STATUSES = {"STATUS_FULL_TIME", "STATUS_POSTPONED", "STATUS_CANCELED", "STATUS_ABANDONED"}
+
+
+def fetch_espn_schedule(start: date, end: date) -> pd.DataFrame:
+    """Série A games scheduled (not finished) between `start` and `end` (inclusive), from ESPN.
+
+    ESPN's scoreboard takes one date per request, so this makes one request per day.
+    """
+    rows = []
+    day = start
+    while day <= end:
+        response = requests.get(ESPN_URL, params={"dates": day.strftime("%Y%m%d")}, timeout=30)
+        response.raise_for_status()
+        for event in response.json().get("events", []):
+            competition = event["competitions"][0]
+            if competition["status"]["type"]["name"] in ESPN_SKIP_STATUSES:
+                continue
+            side = {c["homeAway"]: c for c in competition["competitors"]}
+            rows.append(
+                {
+                    # ESPN times are UTC; convert to Brasília time so late-night games keep their local date
+                    "date": pd.Timestamp(event["date"]).tz_convert("America/Sao_Paulo").tz_localize(None),
+                    "home": espn_to_football_data(side["home"]["team"]["displayName"]),
+                    "away": espn_to_football_data(side["away"]["team"]["displayName"]),
+                }
+            )
+        day += timedelta(days=1)
+    df = pd.DataFrame(rows, columns=["date", "home", "away"])
+    return df.drop_duplicates(["home", "away"]).sort_values("date").reset_index(drop=True)
+
+
 def recent_espn_matches(matches: pd.DataFrame, refresh: bool = False, path: Path = ESPN_PATH) -> pd.DataFrame:
     """ESPN results since football-data's last game (cached in `path`; re-fetched with `refresh`)."""
     if path.exists() and not refresh:
