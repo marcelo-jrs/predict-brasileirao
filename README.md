@@ -38,13 +38,15 @@ python -m brasileirao.predict --refresh
   played since its last update are added from ESPN's public scoreboard.
   Leave `--refresh` out to reuse the copies already downloaded in `data/raw/`.
 - `--sims 50000` changes the number of simulated seasons (default 20,000; more = more precise, but slower).
+- `--model poisson` (or `dixon-coles`) uses the Poisson goals model instead of Elo (default `elo`).
+  Results are saved per model, e.g. `outputs/predictions_2026_poisson.csv`.
 
 It prints a table like this (one row per team):
 
 | column | meaning |
 |---|---|
 | `current_position`, `current_points` | the table today |
-| `elo` | strength score (1500 = average; higher = stronger) |
+| `elo` (Elo model) / `attack`, `defence` (Poisson models) | team strength (Elo: 1500 = average; Poisson: 1.0 = average, higher = better) |
 | `expected_points`, `expected_position` | average over all simulated seasons |
 | `p_title` | chance of winning the league |
 | `p_top6` | chance of finishing 1st–6th (Libertadores) |
@@ -52,7 +54,7 @@ It prints a table like this (one row per team):
 
 The results are also saved in `outputs/`:
 
-- `predictions_2026_elo.csv` – the table above
+- `predictions_2026_elo.csv` – the table above (one file per model)
 - `positions_2026_elo.csv` – the chance of each team finishing in each position (1 to 20)
 
 ## 3. Check how good the model is (optional)
@@ -72,6 +74,7 @@ jupyter lab
 
 - `notebooks/01_eda.ipynb` – first look at the data (home advantage, goals, points needed for top 6 / to avoid relegation)
 - `notebooks/02_how_the_model_works.ipynb` – the model explained step by step, with code to play with
+- `notebooks/03_poisson_model.ipynb` – the Poisson goals model, hands-on
 
 In VS Code: open the notebook and pick the **brasileirao** kernel (top right). If the kernel crashes or you get
 `name 'np' is not defined`, click **Restart** and run the cells again from the top.
@@ -90,6 +93,7 @@ src/brasileirao/
   fixtures.py      league table + list of remaining games
   models/elo.py    Elo strength scores
   models/ordered_logit.py   turns strength gaps into win/draw/loss chances
+  models/poisson.py         Poisson / Dixon-Coles goals model (attack + defence per team)
   simulate.py      plays the remaining games many times
   predict.py       command that puts it all together
   backtest.py      tests the model on past seasons

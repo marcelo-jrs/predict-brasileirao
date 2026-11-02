@@ -21,18 +21,24 @@ def scoreline_distribution(matches: pd.DataFrame) -> dict[str, pd.DataFrame]:
 def simulate_season(
     played: pd.DataFrame,
     fixtures: pd.DataFrame,
-    probs: np.ndarray,
-    scorelines: dict[str, pd.DataFrame],
+    probs: np.ndarray | None = None,
+    scorelines: dict[str, pd.DataFrame] | None = None,
     n_sims: int = 20_000,
     seed: int | None = 42,
+    score_probs: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Simulate the remaining fixtures `n_sims` times.
+
+    Two ways to describe each fixture:
+      - `probs` + `scorelines` (Elo): sample H/D/A, then a typical historical scoreline for that result;
+      - `score_probs` (Poisson): sample the exact score directly from the model's score matrix.
 
     Args:
         played: matches already played this season.
         fixtures: remaining (home, away) pairs.
         probs: array (n_fixtures, 3) with P(home), P(draw), P(away) for each fixture.
         scorelines: output of `scoreline_distribution`.
+        score_probs: array (n_fixtures, G, G) with P(home scores i, away scores j).
 
     Returns:
         positions: int array (n_sims, n_teams) with the final position (1 = champion) of each team.
@@ -44,20 +50,11 @@ def simulate_season(
     idx = {t: i for i, t in enumerate(teams)}
     n_fix, n_teams = len(fixtures), len(teams)
 
-    # 1. Sample results: 0 = home win, 1 = draw, 2 = away win
-    u = rng.random((n_sims, n_fix))
-    cum = np.cumsum(probs, axis=1)
-    outcome = (u[:, :, None] > cum[None, :, :2]).sum(axis=2)
-
-    # 2. Sample a realistic scoreline for each result
-    home_goals = np.zeros((n_sims, n_fix), dtype=np.int64)
-    away_goals = np.zeros((n_sims, n_fix), dtype=np.int64)
-    for code, res in enumerate(["H", "D", "A"]):
-        mask = outcome == code
-        dist = scorelines[res]
-        pick = rng.choice(len(dist), size=mask.sum(), p=dist.freq.to_numpy())
-        home_goals[mask] = dist.home_goals.to_numpy()[pick]
-        away_goals[mask] = dist.away_goals.to_numpy()[pick]
+    if score_probs is not None:
+        home_goals, away_goals = _sample_scores(score_probs, n_sims, rng)
+        outcome = np.where(home_goals > away_goals, 0, np.where(home_goals == away_goals, 1, 2))
+    else:
+        outcome, home_goals, away_goals = _sample_results(probs, scorelines, n_sims, rng)
 
     # 3. Aggregate per team with matrix products: (sims x fixtures) @ (fixtures x teams)
     home_onehot = np.zeros((n_fix, n_teams))
@@ -90,6 +87,34 @@ def simulate_season(
 
 def teams_of(played: pd.DataFrame, fixtures: pd.DataFrame) -> list[str]:
     return sorted(set(played.home) | set(played.away) | set(fixtures.home) | set(fixtures.away))
+
+
+def _sample_results(probs, scorelines, n_sims, rng):
+    """Elo path: sample H/D/A (0/1/2), then a typical historical scoreline for that result."""
+    n_fix = len(probs)
+    u = rng.random((n_sims, n_fix))
+    cum = np.cumsum(probs, axis=1)
+    outcome = (u[:, :, None] > cum[None, :, :2]).sum(axis=2)
+
+    home_goals = np.zeros((n_sims, n_fix), dtype=np.int64)
+    away_goals = np.zeros((n_sims, n_fix), dtype=np.int64)
+    for code, res in enumerate(["H", "D", "A"]):
+        mask = outcome == code
+        dist = scorelines[res]
+        pick = rng.choice(len(dist), size=mask.sum(), p=dist.freq.to_numpy())
+        home_goals[mask] = dist.home_goals.to_numpy()[pick]
+        away_goals[mask] = dist.away_goals.to_numpy()[pick]
+    return outcome, home_goals, away_goals
+
+
+def _sample_scores(score_probs, n_sims, rng):
+    """Poisson path: pick one cell of each fixture's score matrix (cell k -> score k // G x k % G)."""
+    n_fix, size, _ = score_probs.shape
+    cum = np.cumsum(score_probs.reshape(n_fix, -1), axis=1)
+    u = rng.random((n_sims, n_fix)) * cum[:, -1]
+    cells = np.column_stack([np.searchsorted(cum[f], u[:, f], side="right") for f in range(n_fix)])
+    cells = np.minimum(cells, size * size - 1)
+    return cells // size, cells % size
 
 
 def summarize(
