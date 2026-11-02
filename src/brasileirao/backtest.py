@@ -138,7 +138,7 @@ def calibration(probs: np.ndarray, results: pd.Series, bins: int = 10) -> pd.Dat
     which = np.clip(np.digitize(p, edges) - 1, 0, bins - 1)
     df = pd.DataFrame({"bin": which, "predicted": p, "observed": happened})
     out = df.groupby("bin").agg(predicted=("predicted", "mean"), observed=("observed", "mean"), n=("bin", "size"))
-    return out.reset_index(drop=True)
+    return out.reset_index()
 
 
 def main() -> None:
