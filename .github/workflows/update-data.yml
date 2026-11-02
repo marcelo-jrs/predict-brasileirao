@@ -1,0 +1,51 @@
+name: Update data
+
+# Re-runs the models with the latest results and commits the new JSON for the website.
+# Vercel redeploys automatically when the commit lands on main.
+on:
+  schedule:
+    - cron: "30 3 * * *" # 00:30 in Brasília, after the evening games
+    - cron: "0 15 * * *" # 12:00 in Brasília, picks up football-data.co.uk's own update
+  workflow_dispatch:
+    inputs:
+      accuracy:
+        description: "Re-run the backtest for the accuracy page (slow)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-file: environment.yml
+          cache-environment: true
+
+      - name: Export predictions
+        run: python -m brasileirao.export --refresh ${{ inputs.accuracy && '--accuracy' || '' }}
+
+      - name: Commit if anything changed
+        run: |
+          git add web/public/data
+          if git diff --cached --quiet; then
+            echo "No changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update data ($(jq -r .data_through web/public/data/meta.json))"
+          git push
