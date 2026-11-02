@@ -1,13 +1,28 @@
 # predict-brasileirao
 
+**🌐 Live site: <https://predict-brasileirao.vercel.app>** (Português / English)
+
 Predicts the final table of the **Brasileirão Série A 2026**, focusing on:
 
 - **Top 6** → Libertadores
 - **Bottom 4** → relegation to Série B
 
-How it works, in one line: each team gets a strength score (Elo) from past results, then the remaining games
-are "played" 20,000 times on the computer, and we count how often each team finishes in each position.
-For a hands-on explanation, see [notebooks/02_how_the_model_works.ipynb](notebooks/02_how_the_model_works.ipynb).
+How it works, in one line: each team gets a strength score from past results, scores or betting odds, then the
+remaining games are "played" 20,000 times on the computer, and we count how often each team finishes in each
+position. For a hands-on explanation, see [notebooks/02_how_the_model_works.ipynb](notebooks/02_how_the_model_works.ipynb).
+
+## How the site stays up to date
+
+```
+GitHub Actions (twice a day)          this repo                       Vercel
+python -m brasileirao.export  ──▶  web/public/data/*.json  ──push──▶  rebuilds the static site
+(runs the models, writes JSON)      (committed only if changed)        (web/, Next.js)
+```
+
+- [`.github/workflows/update-data.yml`](.github/workflows/update-data.yml) runs at 00:30 and 12:00 (Brasília time)
+  and can be started by hand from the Actions tab ("Run workflow"; tick *accuracy* to re-run the backtest).
+- [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the Python and web tests on every push.
+- The website lives in [`web/`](web/README.md).
 
 ## 1. Setup (once)
 
@@ -107,7 +122,17 @@ jupyter lab
 In VS Code: open the notebook and pick the **brasileirao** kernel (top right). If the kernel crashes or you get
 `name 'np' is not defined`, click **Restart** and run the cells again from the top.
 
-## 5. Tests
+## 5. Update the website data by hand (optional)
+
+```bash
+python -m brasileirao.export --refresh
+```
+
+Writes the JSON files the site reads to `web/public/data/` (current chances for each model, remaining games,
+weekly history, accuracy). Files are only rewritten when something changed. Options: `--accuracy` (re-run the
+backtest), `--rebuild-history`, `--sims N`, `--no-schedule`. To preview the site locally see [web/README.md](web/README.md).
+
+## 6. Tests
 
 ```bash
 pytest
@@ -123,12 +148,17 @@ src/brasileirao/
   models/ordered_logit.py   turns strength gaps into win/draw/loss chances
   models/poisson.py         Poisson / Dixon-Coles goals model (attack + defence per team)
   models/market.py          bookmaker odds → chances; team ratings learned from odds
+  forecast.py      fits a model and prepares the simulator inputs (shared by all commands)
   simulate.py      plays the remaining games many times
   predict.py       command that puts it all together
   next_games.py    next games of the relegation fight and the impact of each result
   backtest.py      tests the model on past seasons
+  export.py        writes the website's JSON files
+  teams.py         team display names (São Paulo, Grêmio…) and short codes
 notebooks/         explanations and exploration
 tests/             automated tests
+web/               the website (Next.js)
+.github/workflows/ CI and the scheduled data update
 ```
 
 ## Rules used

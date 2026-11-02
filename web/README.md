@@ -1,5 +1,7 @@
 # Web dashboard
 
+Live at **<https://predict-brasileirao.vercel.app>**.
+
 Static Next.js site (App Router, TypeScript, Tailwind, Recharts) that shows the predictions in Portuguese and English.
 Everything is precomputed by Python; the site only reads JSON files, and the **What if…?** page re-runs the
 Monte Carlo simulation in the browser (`src/lib/simulator.ts`, a port of `src/brasileirao/simulate.py`).
