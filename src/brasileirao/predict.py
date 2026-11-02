@@ -5,6 +5,7 @@ Usage:
 """
 
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -12,81 +13,70 @@ import pandas as pd
 
 from brasileirao.data import PROJECT_ROOT, load_matches
 from brasileirao.fixtures import league_table, remaining_fixtures, season_teams
-from brasileirao.models.elo import EloModel
-from brasileirao.models.market import MarketRatings
-from brasileirao.models.poisson import PoissonModel, add_promoted_flags, promoted_teams
-from brasileirao.simulate import position_matrix, scoreline_distribution, simulate_season, summarize, teams_of
+from brasileirao.forecast import MODELS, MatchForecast, match_forecast
+from brasileirao.simulate import position_matrix, simulate_season, summarize, teams_of
 
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
-SCORELINE_FROM = 2015
-OUTCOME_MODEL_FROM = 2015
-MODELS = ["elo", "poisson", "dixon-coles", "market"]
 
 
-def simulate_with_elo(matches, season, played, fixtures, n_sims, seed):
-    model = EloModel().fit(matches)
-    model.fit_outcome_model(matches, (matches.season >= OUTCOME_MODEL_FROM) & (matches.season < season))
-    probs = np.array([model.probabilities(h, a) for h, a in fixtures.itertuples(index=False)])
-    scorelines = scoreline_distribution(matches[matches.season >= SCORELINE_FROM])
-    positions, points = simulate_season(played, fixtures, probs, scorelines, n_sims=n_sims, seed=seed)
-    strengths = pd.DataFrame({"elo": pd.Series(model.ratings).round(0)})
-    return positions, points, strengths
+@dataclass
+class SeasonSimulation:
+    season: int
+    played: pd.DataFrame  # games already played this season
+    fixtures: pd.DataFrame  # remaining (home, away) pairs
+    forecast: MatchForecast
+    teams: list[str]  # alphabetical; column order of `positions` / `points`
+    positions: np.ndarray  # (n_sims, n_teams)
+    points: np.ndarray  # (n_sims, n_teams)
+    outcomes: np.ndarray  # (n_sims, n_fixtures): 0 home win, 1 draw, 2 away win
 
 
-def simulate_with_market(matches, played, fixtures, n_sims, seed):
-    model = MarketRatings().fit(matches, as_of=matches.date.max() + pd.Timedelta(days=1))
-    probs = model.probabilities_many(fixtures.home, fixtures.away)
-    scorelines = scoreline_distribution(matches[matches.season >= SCORELINE_FROM])
-    positions, points = simulate_season(played, fixtures, probs, scorelines, n_sims=n_sims, seed=seed)
-    return positions, points, model.rating_table().round(2).to_frame()
-
-
-def simulate_with_poisson(matches, season, played, fixtures, n_sims, seed, dixon_coles):
-    matches = add_promoted_flags(matches)
-    as_of = matches.date.max() + pd.Timedelta(days=1)
-    model = PoissonModel(dixon_coles=dixon_coles).fit(matches, as_of, promoted_teams(matches, season))
-    score_probs = model.score_matrices(list(fixtures.home), list(fixtures.away))
-    positions, points = simulate_season(played, fixtures, n_sims=n_sims, seed=seed, score_probs=score_probs)
-    return positions, points, model.strengths().round(2)
-
-
-def run(
-    model: str = "elo", n_sims: int = 20_000, refresh: bool = False, output_dir: Path = OUTPUT_DIR, seed: int = 42
-) -> pd.DataFrame:
-    matches = load_matches(refresh=refresh)
+def simulate_current_season(
+    model: str, matches: pd.DataFrame, n_sims: int = 20_000, seed: int = 42
+) -> SeasonSimulation:
+    """Fit `model` on `matches` and simulate the rest of the latest season in `matches`."""
     season = int(matches.season.max())
     played = matches[matches.season == season]
     fixtures = remaining_fixtures(matches, season)
-
-    if model == "elo":
-        positions, points, strengths = simulate_with_elo(matches, season, played, fixtures, n_sims, seed)
-    elif model in ("poisson", "dixon-coles"):
-        positions, points, strengths = simulate_with_poisson(
-            matches, season, played, fixtures, n_sims, seed, dixon_coles=model == "dixon-coles"
-        )
-    elif model == "market":
-        positions, points, strengths = simulate_with_market(matches, played, fixtures, n_sims, seed)
-    else:
-        raise ValueError(f"unknown model {model!r}; choose from {MODELS}")
+    forecast = match_forecast(model, matches, season, fixtures)
+    positions, points, outcomes = simulate_season(
+        played, fixtures, n_sims=n_sims, seed=seed, return_outcomes=True, **forecast.sim_inputs
+    )
     teams = teams_of(played, fixtures)
+    return SeasonSimulation(season, played, fixtures, forecast, teams, positions, points, outcomes)
 
-    current = league_table(played, season_teams(matches, season)).reset_index()
-    summary = summarize(positions, points, teams).merge(
+
+def summary_table(sim: SeasonSimulation) -> pd.DataFrame:
+    """One row per team: current table, model strengths and simulated chances."""
+    current = league_table(sim.played, sim.teams).reset_index()
+    summary = summarize(sim.positions, sim.points, sim.teams).merge(
         current[["team", "position", "played", "points"]].rename(
             columns={"position": "current_position", "points": "current_points"}
         ),
         on="team",
     )
+    strengths = sim.forecast.strengths
     summary = summary.join(strengths, on="team")
-    summary = summary[
+    return summary[
         ["team", "current_position", "played", "current_points", *strengths.columns, "expected_points",
          "expected_position", "p_title", "p_top6", "p_relegation"]
     ]
 
+
+def run(
+    model: str = "elo", n_sims: int = 20_000, refresh: bool = False, output_dir: Path = OUTPUT_DIR, seed: int = 42
+) -> pd.DataFrame:
+    if model not in MODELS:
+        raise ValueError(f"unknown model {model!r}; choose from {MODELS}")
+    sim = simulate_current_season(model, load_matches(refresh=refresh), n_sims=n_sims, seed=seed)
+    summary = summary_table(sim)
+
     output_dir.mkdir(parents=True, exist_ok=True)
     name = model.replace("-", "_")
-    summary.to_csv(output_dir / f"predictions_{season}_{name}.csv", index=False)
-    position_matrix(positions, teams).loc[summary.team].to_csv(output_dir / f"positions_{season}_{name}.csv")
+    summary.to_csv(output_dir / f"predictions_{sim.season}_{name}.csv", index=False)
+    position_matrix(sim.positions, sim.teams).loc[summary.team].to_csv(
+        output_dir / f"positions_{sim.season}_{name}.csv"
+    )
     return summary
 
 

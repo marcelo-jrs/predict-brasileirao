@@ -1,5 +1,5 @@
-data/
-outputs/
+/data/
+/outputs/
 CLAUDE.md
 
 __pycache__/

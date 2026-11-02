@@ -17,33 +17,12 @@ import pandas as pd
 import requests
 
 from brasileirao.data import fetch_espn_schedule, load_matches
-from brasileirao.fixtures import league_table, remaining_fixtures, season_teams
-from brasileirao.models.elo import EloModel
-from brasileirao.models.poisson import PoissonModel, add_promoted_flags, outcome_probs, promoted_teams
-from brasileirao.predict import MODELS, OUTCOME_MODEL_FROM, SCORELINE_FROM
-from brasileirao.simulate import scoreline_distribution, simulate_season, teams_of
+from brasileirao.fixtures import league_table, season_teams
+from brasileirao.forecast import MODELS
+from brasileirao.predict import simulate_current_season
 
 RELEGATED = 4
 HOME_WIN, DRAW, AWAY_WIN = 0, 1, 2
-
-
-def match_model_inputs(model: str, matches: pd.DataFrame, season: int, fixtures: pd.DataFrame):
-    """Fit `model` and return (P(home/draw/away) per fixture, extra keyword args for `simulate_season`)."""
-    if model == "elo":
-        elo = EloModel().fit(matches)
-        elo.fit_outcome_model(matches, (matches.season >= OUTCOME_MODEL_FROM) & (matches.season < season))
-        probs = np.array([elo.probabilities(h, a) for h, a in fixtures.itertuples(index=False)])
-        scorelines = scoreline_distribution(matches[matches.season >= SCORELINE_FROM])
-        return probs, {"probs": probs, "scorelines": scorelines}
-    if model in ("poisson", "dixon-coles"):
-        flagged = add_promoted_flags(matches)
-        as_of = flagged.date.max() + pd.Timedelta(days=1)
-        poisson = PoissonModel(dixon_coles=model == "dixon-coles").fit(
-            flagged, as_of, promoted_teams(flagged, season)
-        )
-        score_probs = poisson.score_matrices(list(fixtures.home), list(fixtures.away))
-        return outcome_probs(score_probs), {"score_probs": score_probs}
-    raise ValueError(f"unknown model {model!r}; choose from {MODELS}")
 
 
 def relegation_risk(positions: np.ndarray, bottom: int = RELEGATED) -> np.ndarray:
@@ -166,15 +145,9 @@ def run(
     start: date | None = None,
 ) -> str:
     matches = load_matches(refresh=refresh)
-    season = int(matches.season.max())
-    played = matches[matches.season == season]
-    fixtures = remaining_fixtures(matches, season)
-
-    probs, sim_inputs = match_model_inputs(model, matches, season, fixtures)
-    positions, _, outcomes = simulate_season(
-        played, fixtures, n_sims=n_sims, seed=seed, return_outcomes=True, **sim_inputs
-    )
-    teams = teams_of(played, fixtures)
+    sim = simulate_current_season(model, matches, n_sims=n_sims, seed=seed)
+    season, played, fixtures, teams = sim.season, sim.played, sim.fixtures, sim.teams
+    positions, outcomes, probs = sim.positions, sim.outcomes, sim.forecast.probs
     risk = dict(zip(teams, relegation_risk(positions)))
     at_risk = sorted((t for t in teams if risk[t] >= min_risk), key=risk.get, reverse=True)
 

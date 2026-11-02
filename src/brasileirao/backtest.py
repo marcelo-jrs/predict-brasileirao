@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from brasileirao.data import load_matches
-from brasileirao.evaluate import baseline_probs, brier, log_loss
+from brasileirao.evaluate import baseline_probs, brier, log_loss, one_hot
 from brasileirao.models import market, poisson
 from brasileirao.models.elo import EloModel
 from brasileirao.models.ordered_logit import OrderedLogit
@@ -76,6 +76,40 @@ def expanding_window_ordered_logit(
     return np.vstack(probs)
 
 
+TEST_MODELS = {
+    # id: display name (ids are used by the website)
+    "baseline": "baseline (historical H/D/A frequencies)",
+    "elo_fixed_draws": "Elo + fixed draw rate",
+    "elo": "Elo + ordered logit",
+    "poisson": "Poisson",
+    "dixon_coles": "Dixon-Coles",
+    "market": "Market ratings (learned from past odds)",
+    "closing_odds": "Market closing odds (benchmark)",
+}
+
+
+def holdout_predictions(
+    matches: pd.DataFrame,
+    elo_params: dict,
+    poisson_params: dict,
+    market_params: dict,
+    test_seasons: list[int] = TEST_SEASONS,
+) -> dict[str, np.ndarray]:
+    """P(home/draw/away) of every test-season match for each model in TEST_MODELS (keyed by id)."""
+    test = matches.season.isin(test_seasons)
+    history = EloModel(**elo_params).fit(matches).history
+    return {
+        "baseline": baseline_probs(matches.result[matches.season < min(test_seasons)], test.sum()),
+        "elo_fixed_draws": history.loc[test, ["p_home", "p_draw", "p_away"]].to_numpy(),
+        "elo": expanding_window_ordered_logit(matches, history, test_seasons),
+        "poisson": poisson.walk_forward(matches, test_seasons, **poisson_params),
+        "dixon_coles": poisson.walk_forward(matches, test_seasons, dixon_coles=True, **poisson_params),
+        "market": market.walk_forward(matches, test_seasons, **market_params),
+        # Benchmark only: needs each game's own closing odds, which future fixtures don't have yet
+        "closing_odds": market.implied_probabilities(matches[test]),
+    }
+
+
 def compare_on_test(
     matches: pd.DataFrame,
     elo_params: dict,
@@ -83,28 +117,28 @@ def compare_on_test(
     market_params: dict,
     test_seasons: list[int] = TEST_SEASONS,
 ) -> pd.DataFrame:
-    test = matches.season.isin(test_seasons)
-    results = matches.result[test]
-    history = EloModel(**elo_params).fit(matches).history
-
-    candidates = {
-        "baseline (historical H/D/A frequencies)": baseline_probs(
-            matches.result[matches.season < min(test_seasons)], test.sum()
-        ),
-        "Elo + fixed draw rate": history.loc[test, ["p_home", "p_draw", "p_away"]].to_numpy(),
-        "Elo + ordered logit": expanding_window_ordered_logit(matches, history, test_seasons),
-        "Poisson": poisson.walk_forward(matches, test_seasons, **poisson_params),
-        "Dixon-Coles": poisson.walk_forward(matches, test_seasons, dixon_coles=True, **poisson_params),
-        "Market ratings (learned from past odds)": market.walk_forward(matches, test_seasons, **market_params),
-        # Benchmark only: needs each game's own closing odds, which future fixtures don't have yet
-        "Market closing odds (benchmark)": market.implied_probabilities(matches[test]),
-    }
+    results = matches.result[matches.season.isin(test_seasons)]
+    candidates = holdout_predictions(matches, elo_params, poisson_params, market_params, test_seasons)
     return pd.DataFrame(
         [
-            {"model": name, "log_loss": log_loss(p, results), "brier": brier(p, results)}
-            for name, p in candidates.items()
+            {"model": TEST_MODELS[key], "log_loss": log_loss(p, results), "brier": brier(p, results)}
+            for key, p in candidates.items()
         ]
     ).set_index("model")
+
+
+def calibration(probs: np.ndarray, results: pd.Series, bins: int = 10) -> pd.DataFrame:
+    """Group every predicted probability (home, draw and away alike) into bins and compare with reality.
+
+    A well-calibrated model has `observed` close to `predicted` in every bin.
+    """
+    p = np.asarray(probs).ravel()
+    happened = one_hot(results).ravel()
+    edges = np.linspace(0, 1, bins + 1)
+    which = np.clip(np.digitize(p, edges) - 1, 0, bins - 1)
+    df = pd.DataFrame({"bin": which, "predicted": p, "observed": happened})
+    out = df.groupby("bin").agg(predicted=("predicted", "mean"), observed=("observed", "mean"), n=("bin", "size"))
+    return out.reset_index(drop=True)
 
 
 def main() -> None:
