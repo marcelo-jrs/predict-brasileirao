@@ -16,7 +16,7 @@ import pandas as pd
 
 from brasileirao.data import load_matches
 from brasileirao.evaluate import baseline_probs, brier, log_loss
-from brasileirao.models import poisson
+from brasileirao.models import market, poisson
 from brasileirao.models.elo import EloModel
 from brasileirao.models.ordered_logit import OrderedLogit
 
@@ -34,6 +34,10 @@ POISSON_GRID = {
     "alpha": [1e-3, 1e-2, 3e-2, 0.1, 0.3],
 }
 
+MARKET_GRID = {
+    "decay": [0.0025, 0.005, 0.01, 0.02, 0.04],
+}
+
 
 def elo_grid_search(matches: pd.DataFrame, seasons: list[int], grid: dict = ELO_GRID) -> pd.DataFrame:
     """Log-loss of every hyperparameter combination, scored only on `seasons`."""
@@ -46,13 +50,15 @@ def elo_grid_search(matches: pd.DataFrame, seasons: list[int], grid: dict = ELO_
     return pd.DataFrame(rows).sort_values("log_loss").reset_index(drop=True)
 
 
-def poisson_grid_search(matches: pd.DataFrame, seasons: list[int], grid: dict = POISSON_GRID) -> pd.DataFrame:
-    """Same idea for the Poisson model (walk-forward, refit weekly). `matches` needs promoted flags."""
+def walk_forward_grid_search(
+    matches: pd.DataFrame, seasons: list[int], walk_forward, grid: dict
+) -> pd.DataFrame:
+    """Log-loss of every combination for a walk-forward model (refit weekly). `matches` needs promoted flags."""
     results = matches.result[matches.season.isin(seasons)]
     rows = []
     for values in itertools.product(*grid.values()):
         params = dict(zip(grid, values))
-        probs = poisson.walk_forward(matches, seasons, **params)
+        probs = walk_forward(matches, seasons, **params)
         rows.append({**params, "log_loss": log_loss(probs, results)})
     return pd.DataFrame(rows).sort_values("log_loss").reset_index(drop=True)
 
@@ -71,7 +77,11 @@ def expanding_window_ordered_logit(
 
 
 def compare_on_test(
-    matches: pd.DataFrame, elo_params: dict, poisson_params: dict, test_seasons: list[int] = TEST_SEASONS
+    matches: pd.DataFrame,
+    elo_params: dict,
+    poisson_params: dict,
+    market_params: dict,
+    test_seasons: list[int] = TEST_SEASONS,
 ) -> pd.DataFrame:
     test = matches.season.isin(test_seasons)
     results = matches.result[test]
@@ -85,6 +95,9 @@ def compare_on_test(
         "Elo + ordered logit": expanding_window_ordered_logit(matches, history, test_seasons),
         "Poisson": poisson.walk_forward(matches, test_seasons, **poisson_params),
         "Dixon-Coles": poisson.walk_forward(matches, test_seasons, dixon_coles=True, **poisson_params),
+        "Market ratings (learned from past odds)": market.walk_forward(matches, test_seasons, **market_params),
+        # Benchmark only: needs each game's own closing odds, which future fixtures don't have yet
+        "Market closing odds (benchmark)": market.implied_probabilities(matches[test]),
     }
     return pd.DataFrame(
         [
@@ -97,20 +110,26 @@ def compare_on_test(
 def main() -> None:
     matches = poisson.add_promoted_flags(load_matches())
     matches = matches[matches.season <= max(TEST_SEASONS)]
+    tune = f"{TUNE_SEASONS[0]}–{TUNE_SEASONS[-1]}"
 
     grid = elo_grid_search(matches, TUNE_SEASONS)
-    print(f"Elo grid search on {TUNE_SEASONS[0]}–{TUNE_SEASONS[-1]} (top 5):")
+    print(f"Elo grid search on {tune} (top 5):")
     print(grid.head().round(4).to_string(index=False))
     best_elo = grid.iloc[0][list(ELO_GRID)].to_dict()
 
-    grid = poisson_grid_search(matches, TUNE_SEASONS)
-    print(f"\nPoisson grid search on {TUNE_SEASONS[0]}–{TUNE_SEASONS[-1]} (top 5):")
+    grid = walk_forward_grid_search(matches, TUNE_SEASONS, poisson.walk_forward, POISSON_GRID)
+    print(f"\nPoisson grid search on {tune} (top 5):")
     print(grid.head().to_string(index=False, float_format=lambda v: f"{v:.4g}"))
     best_poisson = grid.iloc[0][list(POISSON_GRID)].to_dict()
 
+    grid = walk_forward_grid_search(matches, TUNE_SEASONS, market.walk_forward, MARKET_GRID)
+    print(f"\nMarket ratings grid search on {tune}:")
+    print(grid.to_string(index=False, float_format=lambda v: f"{v:.4g}"))
+    best_market = grid.iloc[0][list(MARKET_GRID)].to_dict()
+
     print(f"\nTest seasons {TEST_SEASONS[0]}–{TEST_SEASONS[-1]}")
-    print(f"  Elo params: {best_elo}\n  Poisson params: {best_poisson}")
-    print(compare_on_test(matches, best_elo, best_poisson).round(4).to_string())
+    print(f"  Elo params: {best_elo}\n  Poisson params: {best_poisson}\n  Market params: {best_market}")
+    print(compare_on_test(matches, best_elo, best_poisson, best_market).round(4).to_string())
 
 
 if __name__ == "__main__":

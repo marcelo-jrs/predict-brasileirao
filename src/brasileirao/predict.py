@@ -1,7 +1,7 @@
 """Predict the final standings of the current season.
 
 Usage:
-    python -m brasileirao.predict [--model elo|poisson|dixon-coles] [--sims 20000] [--refresh]
+    python -m brasileirao.predict [--model elo|poisson|dixon-coles|market] [--sims 20000] [--refresh]
 """
 
 import argparse
@@ -13,13 +13,14 @@ import pandas as pd
 from brasileirao.data import PROJECT_ROOT, load_matches
 from brasileirao.fixtures import league_table, remaining_fixtures, season_teams
 from brasileirao.models.elo import EloModel
+from brasileirao.models.market import MarketRatings
 from brasileirao.models.poisson import PoissonModel, add_promoted_flags, promoted_teams
 from brasileirao.simulate import position_matrix, scoreline_distribution, simulate_season, summarize, teams_of
 
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
 SCORELINE_FROM = 2015
 OUTCOME_MODEL_FROM = 2015
-MODELS = ["elo", "poisson", "dixon-coles"]
+MODELS = ["elo", "poisson", "dixon-coles", "market"]
 
 
 def simulate_with_elo(matches, season, played, fixtures, n_sims, seed):
@@ -30,6 +31,14 @@ def simulate_with_elo(matches, season, played, fixtures, n_sims, seed):
     positions, points = simulate_season(played, fixtures, probs, scorelines, n_sims=n_sims, seed=seed)
     strengths = pd.DataFrame({"elo": pd.Series(model.ratings).round(0)})
     return positions, points, strengths
+
+
+def simulate_with_market(matches, played, fixtures, n_sims, seed):
+    model = MarketRatings().fit(matches, as_of=matches.date.max() + pd.Timedelta(days=1))
+    probs = model.probabilities_many(fixtures.home, fixtures.away)
+    scorelines = scoreline_distribution(matches[matches.season >= SCORELINE_FROM])
+    positions, points = simulate_season(played, fixtures, probs, scorelines, n_sims=n_sims, seed=seed)
+    return positions, points, model.rating_table().round(2).to_frame()
 
 
 def simulate_with_poisson(matches, season, played, fixtures, n_sims, seed, dixon_coles):
@@ -55,6 +64,8 @@ def run(
         positions, points, strengths = simulate_with_poisson(
             matches, season, played, fixtures, n_sims, seed, dixon_coles=model == "dixon-coles"
         )
+    elif model == "market":
+        positions, points, strengths = simulate_with_market(matches, played, fixtures, n_sims, seed)
     else:
         raise ValueError(f"unknown model {model!r}; choose from {MODELS}")
     teams = teams_of(played, fixtures)
