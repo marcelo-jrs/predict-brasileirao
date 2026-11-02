@@ -39,13 +39,15 @@ jobs:
         run: python -m brasileirao.export --refresh ${{ inputs.accuracy && '--accuracy' || '' }}
 
       - name: Commit if anything changed
+        # Plain (non-login) shell: in the login shell above, an explicit `exit` runs ~/.bash_logout and fails the step
+        shell: bash
         run: |
           git add web/public/data
           if git diff --cached --quiet; then
             echo "No changes."
-            exit 0
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Update data ($(jq -r .data_through web/public/data/meta.json))"
+            git push
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Update data ($(jq -r .data_through web/public/data/meta.json))"
-          git push
