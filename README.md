@@ -33,8 +33,10 @@ conda activate brasileirao
 python -m brasileirao.predict --refresh
 ```
 
-- `--refresh` downloads the latest results from [football-data.co.uk](https://www.football-data.co.uk/brazil.php).
-  Leave it out to reuse the copy already downloaded in `data/raw/`.
+- `--refresh` downloads the latest results. The main source is [football-data.co.uk](https://www.football-data.co.uk/brazil.php)
+  (all seasons since 2012, with betting odds), but it is only updated a couple of times a week, so the games
+  played since its last update are added from ESPN's public scoreboard.
+  Leave `--refresh` out to reuse the copies already downloaded in `data/raw/`.
 - `--sims 50000` changes the number of simulated seasons (default 20,000; more = more precise, but slower).
 
 It prints a table like this (one row per team):
