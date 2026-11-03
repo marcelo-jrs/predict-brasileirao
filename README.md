@@ -108,13 +108,7 @@ python -m brasileirao.backtest
 This pretends we are in the past: it picks the model settings using 2015–2018, then predicts every game of
 2019–2025 and compares the predictions with what really happened. Lower numbers = better predictions.
 
-## 4. Notebooks (local only)
-
-The `notebooks/` folder is git-ignored: it's a personal space for exploration, not part of the repository.
-Open it with `jupyter lab`, or in VS Code pick the **brasileirao** kernel (top right). If the kernel crashes or
-you get `name 'np' is not defined`, click **Restart** and run the cells again from the top.
-
-## 5. Update the website data by hand (optional)
+## 4. Update the website data by hand (optional)
 
 ```bash
 python -m brasileirao.export --refresh
@@ -124,7 +118,7 @@ Writes the JSON files the site reads to `web/public/data/` (current chances for 
 weekly history, accuracy). Files are only rewritten when something changed. Options: `--accuracy` (re-run the
 backtest), `--rebuild-history`, `--sims N`, `--no-schedule`. To preview the site locally see [web/README.md](web/README.md).
 
-## 6. Tests
+## 5. Tests
 
 ```bash
 pytest
@@ -147,7 +141,6 @@ src/brasileirao/
   backtest.py      tests the model on past seasons
   export.py        writes the website's JSON files
   teams.py         team display names (São Paulo, Grêmio…) and short codes
-notebooks/         personal exploration (git-ignored, local only)
 tests/             automated tests
 web/               the website (Next.js)
 .github/workflows/ CI and the scheduled data update
