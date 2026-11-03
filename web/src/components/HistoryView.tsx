@@ -167,7 +167,7 @@ export function HistoryView({
                     on ? "border-accent bg-accent/15 text-foreground" : "border-border text-muted hover:text-foreground"
                   }`}
                 >
-                  <span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: dot }} />
+                  <span className="mr-1 inline-block h-2 w-2 rounded-full border border-border" style={{ background: dot }} />
                   {meta.teams[r.team]?.name ?? r.team}
                 </button>
               );
