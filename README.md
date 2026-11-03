@@ -9,7 +9,7 @@ Predicts the final table of the **Brasileirão Série A 2026**, focusing on:
 
 How it works, in one line: each team gets a strength score from past results, scores or betting odds, then the
 remaining games are "played" 20,000 times on the computer, and we count how often each team finishes in each
-position. For a hands-on explanation, see [notebooks/02_how_the_model_works.ipynb](notebooks/02_how_the_model_works.ipynb).
+position. The site's "How it works" page explains it in plain language.
 
 ## How the site stays up to date
 
@@ -108,19 +108,11 @@ python -m brasileirao.backtest
 This pretends we are in the past: it picks the model settings using 2015–2018, then predicts every game of
 2019–2025 and compares the predictions with what really happened. Lower numbers = better predictions.
 
-## 4. Notebooks
+## 4. Notebooks (local only)
 
-```bash
-jupyter lab
-```
-
-- `notebooks/01_eda.ipynb` – first look at the data (home advantage, goals, points needed for top 6 / to avoid relegation)
-- `notebooks/02_how_the_model_works.ipynb` – the model explained step by step, with code to play with
-- `notebooks/03_poisson_model.ipynb` – the Poisson goals model, hands-on
-- `notebooks/04_betting_market.ipynb` – bookmaker odds: margin, calibration, market ratings, model leaderboard
-
-In VS Code: open the notebook and pick the **brasileirao** kernel (top right). If the kernel crashes or you get
-`name 'np' is not defined`, click **Restart** and run the cells again from the top.
+The `notebooks/` folder is git-ignored: it's a personal space for exploration, not part of the repository.
+Open it with `jupyter lab`, or in VS Code pick the **brasileirao** kernel (top right). If the kernel crashes or
+you get `name 'np' is not defined`, click **Restart** and run the cells again from the top.
 
 ## 5. Update the website data by hand (optional)
 
@@ -155,7 +147,7 @@ src/brasileirao/
   backtest.py      tests the model on past seasons
   export.py        writes the website's JSON files
   teams.py         team display names (São Paulo, Grêmio…) and short codes
-notebooks/         explanations and exploration
+notebooks/         personal exploration (git-ignored, local only)
 tests/             automated tests
 web/               the website (Next.js)
 .github/workflows/ CI and the scheduled data update

@@ -74,8 +74,8 @@ function Pt({ lang, marketGain }: { lang: Lang; marketGain: string }) {
           <li>G6 = 6 primeiros da tabela; vagas extras por Copa do Brasil/Libertadores não são consideradas.</li>
         </ul>
         <p>
-          Este é um projeto de estudo de ciência de dados. O código, os notebooks com as explicações e os testes
-          estão no <a href={REPO_URL} className="underline">GitHub</a>.
+          Este é um projeto de estudo de ciência de dados. O código e os testes estão no{" "}
+          <a href={REPO_URL} className="underline">GitHub</a>.
         </p>
       </Section>
     </>
@@ -137,7 +137,7 @@ function En({ lang, marketGain }: { lang: Lang; marketGain: string }) {
           <li>Top 6 = first six in the table; extra places from cup winners are ignored.</li>
         </ul>
         <p>
-          This is a data-science learning project. The code, the explanatory notebooks and the tests are on{" "}
+          This is a data-science learning project. The code and the tests are on{" "}
           <a href={REPO_URL} className="underline">GitHub</a>.
         </p>
       </Section>
