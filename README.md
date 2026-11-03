@@ -1,153 +1,93 @@
-# predict-brasileirao
+# Brasileirão 2026 – who makes the Libertadores, who goes down?
 
-**🌐 Live site: <https://predict-brasileirao.vercel.app>** (Português / English)
+**🌐 <https://predict-brasileirao.vercel.app>** (Português / English)
 
-Predicts the final table of the **Brasileirão Série A 2026**, focusing on:
+Probabilistic forecasts for the final table of the Brazilian **Série A 2026**: each team's chance of winning the
+title, finishing in the **top 6** (Libertadores) or in the **bottom 4** (relegation to Série B).
+The forecasts update automatically after every round.
 
-- **Top 6** → Libertadores
-- **Bottom 4** → relegation to Série B
+## How it works
 
-How it works, in one line: each team gets a strength score from past results, scores or betting odds, then the
-remaining games are "played" 20,000 times on the computer, and we count how often each team finishes in each
-position. The site's "How it works" page explains it in plain language.
+1. **Rate the teams.** Three models estimate how strong each team is:
+   - **Elo** – a rating learned from results (wins against strong teams count more).
+   - **Poisson** – attack and defence strengths learned from scores, predicting the number of goals each side scores.
+   - **Market** – ratings learned from bookmakers' odds of recent games, which also reflect injuries, suspensions
+     and coaching changes.
+2. **Price every remaining game.** Ratings plus home advantage give the chance of a home win, draw or away win
+   (and, for Poisson, of every scoreline).
+3. **Simulate the rest of the season 20,000 times.** Each simulation plays all remaining games, adds the points to
+   the current table and applies the official tiebreakers (points, wins, goal difference, goals scored). A team's
+   chance of, say, relegation is the share of simulations in which it finished 17th–20th.
 
-## How the site stays up to date
+The site also lets you pick results for upcoming games and re-runs the simulation in your browser (**What if…?**),
+and shows how each team's chances evolved over the season.
+
+## How good is it?
+
+Model settings were chosen on the 2015–2018 seasons, then every one of the 2,660 games of 2019–2025 was predicted
+using only information available before it. Lower is better:
+
+| Model | Log-loss | Brier |
+|---|---|---|
+| Always predict the average home/draw/away rates | 1.0621 | 0.6410 |
+| Elo | 1.0228 | 0.6137 |
+| Poisson | 1.0218 | 0.6129 |
+| **Market ratings** (default on the site) | **1.0153** | **0.6085** |
+| *Bookmakers' closing odds (benchmark – only exist minutes before kick-off)* | *1.0007* | *0.5990* |
+
+Calibration charts are on the site's **Accuracy** page.
+
+## Architecture
 
 ```
-GitHub Actions (twice a day)          this repo                       Vercel
-python -m brasileirao.export  ──▶  web/public/data/*.json  ──push──▶  rebuilds the static site
-(runs the models, writes JSON)      (committed only if changed)        (web/, Next.js)
+GitHub Actions (twice a day)            repository                         Vercel
+Python: download results, fit   ──▶  web/public/data/*.json   ──push──▶  static Next.js site
+models, simulate, export JSON        (committed when it changes)           (rebuilt on every data commit)
 ```
 
-- [`.github/workflows/update-data.yml`](.github/workflows/update-data.yml) runs at 00:30 and 12:00 (Brasília time)
-  and can be started by hand from the Actions tab ("Run workflow"; tick *accuracy* to re-run the backtest).
-- [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the Python and web tests on every push.
-- The website lives in [`web/`](web/README.md).
+Everything is precomputed, so the site is fully static. The in-browser simulator
+([`web/src/lib/simulator.ts`](web/src/lib/simulator.ts)) is a TypeScript port of the Python one, and a test
+checks that both give the same results.
 
-## 1. Setup (once)
+**Data:** results and closing odds from [football-data.co.uk](https://www.football-data.co.uk/brazil.php)
+(Série A since 2012), with the most recent results and the fixture schedule from ESPN's public scoreboard.
 
-You need [Anaconda](https://www.anaconda.com/download) or Miniconda installed.
-Open the **Anaconda Prompt** (or any terminal where `conda` works) in this folder and run:
+## Repository layout
+
+```
+src/brasileirao/        Python package
+  data.py               download and clean match data
+  fixtures.py           league table and remaining fixtures
+  models/               elo.py, ordered_logit.py, poisson.py, market.py
+  forecast.py           fit a model and build the simulator inputs
+  simulate.py           Monte Carlo simulation of the rest of the season
+  backtest.py           time-split evaluation of the models
+  export.py             JSON files for the website
+  predict.py            command-line forecast
+  next_games.py         relegation fight: next games and risk if win / draw / lose
+tests/                  pytest suite
+web/                    website (Next.js, TypeScript, Tailwind, Recharts) – see web/README.md
+.github/workflows/      CI and the scheduled data update
+```
+
+## Running it locally
+
+Requires [conda](https://docs.conda.io/) (or mamba) for Python and Node.js 22 for the website.
 
 ```bash
 conda env create -f environment.yml
-```
-
-This creates an environment called `brasileirao` with all the libraries and installs this project in it.
-
-If `environment.yml` changes later, update the environment with:
-
-```bash
-conda env update -f environment.yml --prune
-```
-
-## 2. Run the prediction
-
-```bash
 conda activate brasileirao
-python -m brasileirao.predict --refresh
-```
 
-- `--refresh` downloads the latest results. The main source is [football-data.co.uk](https://www.football-data.co.uk/brazil.php)
-  (all seasons since 2012, with betting odds), but it is only updated a couple of times a week, so the games
-  played since its last update are added from ESPN's public scoreboard.
-  Leave `--refresh` out to reuse the copies already downloaded in `data/raw/`.
-- `--sims 50000` changes the number of simulated seasons (default 20,000; more = more precise, but slower).
-- `--model poisson` (or `dixon-coles`, `market`) picks the match model (default `elo`):
-  - `elo` – team strength learned from results
-  - `poisson` / `dixon-coles` – attack and defence learned from scores
-  - `market` – team strength learned from bookmakers' odds of recent games (best in the backtest)
-
-  Results are saved per model, e.g. `outputs/predictions_2026_market.csv`.
-
-It prints a table like this (one row per team):
-
-| column | meaning |
-|---|---|
-| `current_position`, `current_points` | the table today |
-| `elo` / `attack`, `defence` / `market_rating` | team strength for the chosen model (Elo: 1500 = average; Poisson: 1.0 = average; market: 0 = average; higher = better) |
-| `expected_points`, `expected_position` | average over all simulated seasons |
-| `p_title` | chance of winning the league |
-| `p_top6` | chance of finishing 1st–6th (Libertadores) |
-| `p_relegation` | chance of finishing 17th–20th (Série B) |
-
-The results are also saved in `outputs/`:
-
-- `predictions_2026_elo.csv` – the table above (one file per model)
-- `positions_2026_elo.csv` – the chance of each team finishing in each position (1 to 20)
-
-### Next games of the relegation fight
-
-```bash
-python -m brasileirao.next_games
-```
-
-For every team with a relegation risk of 5% or more, it shows the team's **next game** (from ESPN's schedule),
-the chance of a home win / draw / away win, and the team's relegation risk **today** and **if it wins, draws
-or loses** that game. Example:
-
-```
-Wed 04/11 19:30   Flamengo RJ (73 pts, 1st)  x  Gremio (37 pts, 15th)
-  Chance:  Flamengo RJ win 78%  |  draw 15%  |  Gremio win 8%
-  Relegation risk   today   if win  if draw  if lose
-  Gremio              45%      15%      40%      49%
-```
-
-How "if win" is computed: out of the 20,000 simulated seasons, keep only those in which Grêmio won this game,
-and count how often Grêmio was relegated in them.
-
-Options: `--model`, `--sims`, `--refresh` (same as above), `--min-risk 10` (only teams with risk ≥ 10%),
-`--days 21` (how far ahead to look for games; default 14).
-
-## 3. Check how good the model is (optional)
-
-```bash
-python -m brasileirao.backtest
-```
-
-This pretends we are in the past: it picks the model settings using 2015–2018, then predicts every game of
-2019–2025 and compares the predictions with what really happened. Lower numbers = better predictions.
-
-## 4. Update the website data by hand (optional)
-
-```bash
-python -m brasileirao.export --refresh
-```
-
-Writes the JSON files the site reads to `web/public/data/` (current chances for each model, remaining games,
-weekly history, accuracy). Files are only rewritten when something changed. Options: `--accuracy` (re-run the
-backtest), `--rebuild-history`, `--sims N`, `--no-schedule`. To preview the site locally see [web/README.md](web/README.md).
-
-## 5. Tests
-
-```bash
+python -m brasileirao.predict --refresh --model market   # forecast table in the terminal (models: elo, poisson, dixon-coles, market)
+python -m brasileirao.next_games                         # next games of the teams fighting relegation
+python -m brasileirao.backtest                           # reproduce the accuracy table above
 pytest
 ```
 
-## Project layout
+For the website, see [web/README.md](web/README.md).
 
-```
-src/brasileirao/
-  data.py          download and clean the match data
-  fixtures.py      league table + list of remaining games
-  models/elo.py    Elo strength scores
-  models/ordered_logit.py   turns strength gaps into win/draw/loss chances
-  models/poisson.py         Poisson / Dixon-Coles goals model (attack + defence per team)
-  models/market.py          bookmaker odds → chances; team ratings learned from odds
-  forecast.py      fits a model and prepares the simulator inputs (shared by all commands)
-  simulate.py      plays the remaining games many times
-  predict.py       command that puts it all together
-  next_games.py    next games of the relegation fight and the impact of each result
-  backtest.py      tests the model on past seasons
-  export.py        writes the website's JSON files
-  teams.py         team display names (São Paulo, Grêmio…) and short codes
-tests/             automated tests
-web/               the website (Next.js)
-.github/workflows/ CI and the scheduled data update
-```
+## Assumptions and limitations
 
-## Rules used
-
-- Libertadores = top 6 of the table (extra spots from cup winners are ignored).
-- Relegation = bottom 4.
-- Tiebreakers: points, wins, goal difference, goals scored.
+- Libertadores = top 6 of the league table; extra places from cup winners are ignored. Relegation = bottom 4.
+- Team ratings are frozen during a simulated season, so the chances are probably slightly overconfident.
+- The models know nothing about line-ups or injuries, except what the market ratings pick up from the odds.

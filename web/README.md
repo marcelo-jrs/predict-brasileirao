@@ -17,11 +17,8 @@ npm run lint
 npm run build      # static site in web/out/
 ```
 
-To refresh the data first (from the repo root, in the `brasileirao` conda env):
-
-```bash
-python -m brasileirao.export --refresh
-```
+The data in `public/data/` is committed, so no Python is needed to run the site. It is produced by
+`python -m brasileirao.export` (see the [main README](../README.md)).
 
 ## Pages
 
