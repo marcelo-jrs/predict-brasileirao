@@ -1,10 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- .",
-  "headers": [
-    {
-      "source": "/(.*)opengraph-image(.*)",
-      "headers": [{ "key": "Content-Type", "value": "image/png" }]
-    }
-  ]
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- ."
 }

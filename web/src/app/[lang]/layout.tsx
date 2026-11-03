@@ -8,6 +8,7 @@ import { ModelProvider } from "@/components/ModelProvider";
 import { getMeta } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { LANGS, getDict, isLang } from "@/lib/i18n";
+import { OG_SIZE } from "@/lib/og";
 import { REPO_URL, SITE_URL } from "@/lib/site";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -35,8 +36,14 @@ export async function generateMetadata({ params }: LayoutProps<"/[lang]">): Prom
       description: t.siteDescription,
       locale: lang === "pt" ? "pt_BR" : "en_GB",
       url: `/${lang}/`,
+      images: [{ url: `/${lang}/og.png`, ...OG_SIZE, alt: t.siteDescription }],
     },
-    twitter: { card: "summary_large_image", title: t.siteTitle, description: t.siteDescription },
+    twitter: {
+      card: "summary_large_image",
+      title: t.siteTitle,
+      description: t.siteDescription,
+      images: [`/${lang}/og.png`],
+    },
   };
 }
 
