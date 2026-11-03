@@ -8,7 +8,7 @@ import { ModelProvider } from "@/components/ModelProvider";
 import { getMeta } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { LANGS, getDict, isLang } from "@/lib/i18n";
-import { REPO_URL } from "@/lib/site";
+import { REPO_URL, SITE_URL } from "@/lib/site";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -24,9 +24,19 @@ export async function generateMetadata({ params }: LayoutProps<"/[lang]">): Prom
   if (!isLang(lang)) return {};
   const t = getDict(lang);
   return {
+    metadataBase: new URL(SITE_URL),
     title: { default: t.siteTitle, template: `%s · ${t.siteTitle}` },
     description: t.siteDescription,
     alternates: { languages: { "pt-BR": "/pt/", en: "/en/" } },
+    openGraph: {
+      type: "website",
+      siteName: t.siteTitle,
+      title: t.siteTitle,
+      description: t.siteDescription,
+      locale: lang === "pt" ? "pt_BR" : "en_GB",
+      url: `/${lang}/`,
+    },
+    twitter: { card: "summary_large_image", title: t.siteTitle, description: t.siteDescription },
   };
 }
 
