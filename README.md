@@ -37,6 +37,12 @@ using only information available before it. Lower is better:
 
 Calibration charts are on the site's **Accuracy** page.
 
+The season-long chances were checked the same way: for every season from 2019 to 2025, the forecast was re-run with
+15, 10 and 5 rounds left (hiding everything after that point) and compared with the final table. On relegation, the
+market model's Brier score was 0.064, against 0.086 for "the table as it stands" and 0.160 for "every team has the
+same chance", and its stated chances matched how often things really happened (calibration slope 0.98, where 1 is
+perfect). Reproduce with `python -m brasileirao.season_backtest`.
+
 ## Architecture
 
 ```
@@ -61,7 +67,8 @@ src/brasileirao/        Python package
   models/               elo.py, ordered_logit.py, poisson.py, market.py
   forecast.py           fit a model and build the simulator inputs
   simulate.py           Monte Carlo simulation of the rest of the season
-  backtest.py           time-split evaluation of the models
+  backtest.py           time-split evaluation of the match predictions
+  season_backtest.py    evaluation of the season-long chances (title, top 6, relegation)
   export.py             JSON files for the website
   predict.py            command-line forecast
   next_games.py         relegation fight: next games and risk if win / draw / lose
